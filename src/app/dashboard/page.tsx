@@ -1,104 +1,134 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import DashboardHeader from '@/components/DashboardHeader';
 
-interface PDFFile {
+interface EmailMetadata {
   id: string;
   fromAddress: string;
   subject: string;
   dateReceived: string;
-  fileName: string;
+  attachmentFileName: string;
+  configId: string;
+  config: {
+    emailAddress: string;
+    connectionType: string;
+  };
 }
 
 export default function Dashboard() {
-  const [pdfs, setPdfs] = useState<PDFFile[]>([]);
+  const [emails, setEmails] = useState<EmailMetadata[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPDFs();
+    fetchEmails();
   }, []);
 
-  const fetchPDFs = async () => {
+  const fetchEmails = async () => {
     try {
-      const response = await fetch('/api/pdfs');
+      const response = await fetch('/api/email-metadata');
+      if (!response.ok) throw new Error('Failed to fetch emails');
       const data = await response.json();
-      setPdfs(data);
+      setEmails(data);
+      setError(null);
     } catch (error) {
-      console.error('Error fetching PDFs:', error);
+      setError('Failed to load emails');
+      console.error('Error:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCheckNow = async () => {
+  const handleCheckEmails = async () => {
     setLoading(true);
     try {
-      await fetch('/api/email-ingestion/check', { method: 'POST' });
-      await fetchPDFs();
+      const response = await fetch('/api/fetch-emails', { method: 'POST' });
+      const data = await response.json();
+
+      if (response.status === 429) {
+        setError('Email fetch already in progress. Please wait...');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to check emails');
+      }
+
+      await fetchEmails();
     } catch (error) {
-      console.error('Error checking emails:', error);
+      setError(error instanceof Error ? error.message : 'Failed to check emails');
+      console.error('Error:', error);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">PDF Dashboard</h1>
-        <div className="space-x-4">
-          <Link href="/" className="button-secondary">
-            Configure Emails
-          </Link>
-          <button 
-            onClick={handleCheckNow} 
-            disabled={loading}
-            className="button-primary"
-          >
-            {loading ? 'Checking...' : 'Check Now'}
-          </button>
+    <div className="space-y-6">
+      <DashboardHeader onCheckEmails={handleCheckEmails} isLoading={loading} />
+      
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-lg text-red-700 dark:text-red-400">
+          {error}
         </div>
-      </div>
+      )}
 
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                From
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Subject
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Date
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                File
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {pdfs.map((pdf) => (
-              <tr key={pdf.id}>
-                <td className="px-6 py-4 whitespace-nowrap">{pdf.fromAddress}</td>
-                <td className="px-6 py-4">{pdf.subject}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {new Date(pdf.dateReceived).toLocaleDateString()}
-                </td>
-                <td className="px-6 py-4">
-                  <a 
-                    href={`/api/pdfs/${pdf.id}/download`}
-                    className="text-blue-600 hover:text-blue-800"
-                  >
-                    {pdf.fileName}
-                  </a>
-                </td>
+      <div className="bg-card rounded-lg border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 dark:bg-gray-800/50">
+              <tr>
+                <th className="text-left p-4 font-medium">From</th>
+                <th className="text-left p-4 font-medium">Subject</th>
+                <th className="text-left p-4 font-medium">Date</th>
+                <th className="text-left p-4 font-medium">Account</th>
+                <th className="text-left p-4 font-medium">Attachment</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="p-4 text-center">
+                    Loading...
+                  </td>
+                </tr>
+              ) : emails.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-4 text-center text-gray-500">
+                    No emails found. Click "Check New Emails" to fetch new messages.
+                  </td>
+                </tr>
+              ) : (
+                emails.map((email) => (
+                  <tr key={email.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                    <td className="p-4 whitespace-nowrap">{email.fromAddress}</td>
+                    <td className="p-4">{email.subject}</td>
+                    <td className="p-4 whitespace-nowrap">
+                      {new Date(email.dateReceived).toLocaleDateString()}
+                    </td>
+                    <td className="p-4 whitespace-nowrap">
+                      {email.config.emailAddress}
+                      <span className="ml-2 text-xs text-gray-500">
+                        ({email.config.connectionType})
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <a 
+                        href={`/pdfs/${email.attachmentFileName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                      >
+                        {email.attachmentFileName}
+                      </a>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

@@ -104,72 +104,95 @@ export class EmailIngestionService {
   }
 
   private async processGmailEmails(config: EmailConfig) {
-    const auth = new google.auth.OAuth2(
-      process.env.GMAIL_CLIENT_ID,
-      process.env.GMAIL_CLIENT_SECRET,
-      process.env.GMAIL_REDIRECT_URI
-    );
-    
-    auth.setCredentials({ refresh_token: config.password });
-    const gmail = google.gmail({ version: 'v1', auth });
-
-    const res = await gmail.users.messages.list({
-      userId: 'me',
-      q: 'has:attachment filename:pdf'
-    });
-
-    if (res.data.messages) {
-      for (const message of res.data.messages) {
-        const email = await gmail.users.messages.get({
+    try {
+      const auth = new google.auth.OAuth2(
+        process.env.GMAIL_CLIENT_ID,
+        process.env.GMAIL_CLIENT_SECRET,
+        process.env.GMAIL_REDIRECT_URI
+      );
+      
+      if (!config.password) {
+        throw new Error('Gmail refresh token not found');
+      }
+  
+      auth.setCredentials({ refresh_token: config.password });
+      const gmail = google.gmail({ version: 'v1', auth });
+  
+      try {
+        const res = await gmail.users.messages.list({
           userId: 'me',
-          id: message.id!,
-          format: 'full'
+          q: 'has:attachment filename:pdf',
+          maxResults: 100
         });
-
-        // Process attachments
-        const attachments = email.data.payload?.parts?.filter(
-          (part: gmail_v1.Schema$MessagePart) => 
-            part.mimeType === 'application/pdf'
-        );
-
-        if (attachments) {
-          for (const attachment of attachments) {
-            const att = await gmail.users.messages.attachments.get({
+  
+        if (!res.data.messages || res.data.messages.length === 0) {
+          console.log('No messages found with PDF attachments');
+          return;
+        }
+  
+        for (const message of res.data.messages) {
+          try {
+            const email = await gmail.users.messages.get({
               userId: 'me',
-              messageId: message.id!,
-              id: attachment.body?.attachmentId!
+              id: message.id!,
+              format: 'full'
             });
-
-            if (att.data.data) {
-              const attachmentData: AttachmentData = {
-                filename: attachment.filename!,
-                content: Buffer.from(att.data.data, 'base64'),
-                contentType: 'application/pdf',
-                related: false,
-                type: 'attachment',
-                contentDisposition: 'attachment',
-                headers: {}
-              };
-
-              const headers = email.data.payload?.headers;
-              const fromHeader = headers?.find(
-                (h: gmail_v1.Schema$MessagePartHeader) => h.name === 'From'
-              )?.value || '';
-              const subjectHeader = headers?.find(
-                (h: gmail_v1.Schema$MessagePartHeader) => h.name === 'Subject'
-              )?.value || '';
-
-              await this.savePDFAttachment(
-                config.id,
-                attachmentData,
-                fromHeader,
-                subjectHeader,
-                new Date(parseInt(email.data.internalDate!))
-              );
+    
+            // Process attachments
+            const attachments = email.data.payload?.parts?.filter(
+              (part: gmail_v1.Schema$MessagePart) => 
+                part.mimeType === 'application/pdf'
+            );
+    
+            if (attachments) {
+              for (const attachment of attachments) {
+                const att = await gmail.users.messages.attachments.get({
+                  userId: 'me',
+                  messageId: message.id!,
+                  id: attachment.body?.attachmentId!
+                });
+    
+                if (att.data.data) {
+                  const attachmentData: AttachmentData = {
+                    filename: attachment.filename!,
+                    content: Buffer.from(att.data.data, 'base64'),
+                    contentType: 'application/pdf',
+                    related: false,
+                    type: 'attachment',
+                    contentDisposition: 'attachment',
+                    headers: {}
+                  };
+    
+                  const headers = email.data.payload?.headers;
+                  const fromHeader = headers?.find(
+                    (h: gmail_v1.Schema$MessagePartHeader) => h.name === 'From'
+                  )?.value || '';
+                  const subjectHeader = headers?.find(
+                    (h: gmail_v1.Schema$MessagePartHeader) => h.name === 'Subject'
+                  )?.value || '';
+    
+                  await this.savePDFAttachment(
+                    config.id,
+                    attachmentData,
+                    fromHeader,
+                    subjectHeader,
+                    new Date(parseInt(email.data.internalDate!))
+                  );
+                }
+              }
             }
+          } catch (messageError) {
+            console.error(`Error processing message ${message.id}:`, messageError);
+            continue;
           }
         }
+      } catch (gmailError) {
+        const errorMessage = gmailError instanceof Error ? gmailError.message : 'Unknown error';
+        throw new Error(`Gmail API error: ${errorMessage}`);
       }
+    } catch (error) {
+      console.error('Failed to process Gmail emails:', error);
+      throw error;
     }
   }
 

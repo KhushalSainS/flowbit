@@ -1,15 +1,28 @@
 export type ConnectionType = 'IMAP' | 'GMAIL' | 'OUTLOOK';
 
 export interface EmailConfig {
-  id?: string;
+  id: string;
   emailAddress: string;
-  username?: string | null;
-  password?: string | null;
-  host?: string | null;
-  port?: number | null;
-  useSSL: boolean;
   connectionType: ConnectionType;
-  active?: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
+  username: string;
+  password: string;
+  host?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface EmailMetadata {
+  id: string;
+  configId: string;
+  fromAddress: string;
+  subject: string;
+  dateReceived: Date;
+  attachmentFileName: string;
+}
+
+export interface ProcessedEmail {
+  fileName: string;
+  fromAddress: string;
+  subject: string;
+  dateReceived: Date;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { EmailConfig, ConnectionType } from '@/types/email';
 
 interface Props {
@@ -8,207 +8,145 @@ interface Props {
 }
 
 export default function EmailConfigForm({ onSuccess }: Props) {
-  const [configs, setConfigs] = useState<EmailConfig[]>([]);
-  const [isEditing, setIsEditing] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<EmailConfig>>({
+    emailAddress: '',
     connectionType: 'IMAP',
-    useSSL: true
+    username: '',
+    password: '',
+    host: ''
   });
-
-  useEffect(() => {
-    fetchConfigs();
-  }, []);
-
-  const fetchConfigs = async () => {
-    try {
-      const response = await fetch('/api/email-ingestion/configs');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const text = await response.text();
-      if (!text) {
-        setConfigs([]);
-        return;
-      }
-      const data = JSON.parse(text);
-      setConfigs(data);
-    } catch (error) {
-      console.error('Error fetching configs:', error);
-      setConfigs([]);
-      // You might want to add error state handling here
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const url = isEditing 
-        ? `/api/email-ingestion/configs/${isEditing}`
-        : '/api/email-ingestion/configs';
-
-      const response = await fetch(url, {
-        method: isEditing ? 'PUT' : 'POST',
+      const response = await fetch('/api/email-config', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
 
-      const responseText = await response.text();
-      let responseData;
-      try {
-        responseData = responseText ? JSON.parse(responseText) : null;
-      } catch (e) {
-        console.error('Failed to parse response:', e);
-      }
-
       if (!response.ok) {
-        throw new Error(responseData?.message || 'Failed to save config');
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to save configuration');
       }
 
       setFormData({
+        emailAddress: '',
         connectionType: 'IMAP',
-        useSSL: true
+        username: '',
+        password: '',
+        host: ''
       });
-      setIsEditing(null);
-      await fetchConfigs();
+      
       onSuccess?.();
     } catch (error) {
       console.error('Error saving config:', error);
-      alert('Failed to save email configuration');
+      alert(error instanceof Error ? error.message : 'Failed to save configuration');
     }
   };
 
-  const handleEdit = (config: EmailConfig) => {
-    if (config.id) {
-      setIsEditing(config.id);
-      setFormData(config);
-    }
-  };
-
-  const handleDelete = async (id: string | undefined) => {
-    if (!id) return;
-    if (!confirm('Are you sure you want to delete this configuration?')) return;
-
+  const handleGmailAuth = async () => {
     try {
-      await fetch(`/api/email-ingestion/configs/${id}`, {
-        method: 'DELETE',
-      });
-      await fetchConfigs();
+      if (!formData.emailAddress) {
+        alert('Please enter your email address first');
+        return;
+      }
+
+      const response = await fetch(`/api/auth/gmail?email=${encodeURIComponent(formData.emailAddress)}`);
+      const { url } = await response.json();
+      window.location.href = url;
     } catch (error) {
-      console.error('Error:', error);
-      alert('Failed to delete configuration');
+      console.error('Failed to start Gmail auth:', error);
+      alert('Failed to authenticate with Gmail');
     }
   };
 
   return (
-    <div className="space-y-6">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4" id="email-config-form">
+      <div>
+        <label htmlFor="emailAddress" className="block mb-2">Email Address</label>
+        <input
+          id="emailAddress"
+          type="email"
+          value={formData.emailAddress}
+          onChange={(e) => setFormData({ ...formData, emailAddress: e.target.value })}
+          className="input"
+          required
+        />
+      </div>
+
+      <div>
+        <label htmlFor="connectionType" className="block mb-2">Connection Type</label>
+        <select
+          id="connectionType"
+          value={formData.connectionType}
+          onChange={(e) => setFormData({ ...formData, connectionType: e.target.value as ConnectionType })}
+          className="input"
+          required
+        >
+          <option value="IMAP">IMAP</option>
+          <option value="GMAIL">Gmail API</option>
+          <option value="OUTLOOK">Outlook/Graph API</option>
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="username" className="block mb-2">Username</label>
+        <input
+          id="username"
+          type="text"
+          value={formData.username}
+          onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+          className="input"
+          required
+        />
+      </div>
+
+      <div>
+        <label htmlFor="password" className="block mb-2">Password/Token</label>
+        <input
+          id="password"
+          type="password"
+          value={formData.password}
+          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+          className="input"
+          required
+        />
+      </div>
+
+      {formData.connectionType === 'IMAP' && (
         <div>
-          <label className="block text-sm font-medium mb-1">Email Address</label>
+          <label htmlFor="host" className="block mb-2">Host</label>
           <input
-            type="email"
-            required
+            id="host"
+            type="text"
+            value={formData.host}
+            onChange={(e) => setFormData({ ...formData, host: e.target.value })}
             className="input"
-            value={formData.emailAddress || ''}
-            onChange={e => setFormData(prev => ({ ...prev, emailAddress: e.target.value }))}
+            placeholder="e.g., imap.gmail.com"
+            required
           />
         </div>
+      )}
+
+      {formData.connectionType === 'GMAIL' && (
         <div>
-          <label className="block text-sm font-medium mb-1">Connection Type</label>
-          <select
-            required
-            className="input"
-            value={formData.connectionType}
-            onChange={e => setFormData(prev => ({ ...prev, connectionType: e.target.value as ConnectionType }))}
+          <button
+            type="button"
+            onClick={handleGmailAuth}
+            className="button-secondary w-full"
           >
-            <option value="IMAP">IMAP</option>
-            <option value="GMAIL">Gmail API</option>
-            <option value="OUTLOOK">Outlook API</option>
-          </select>
+            Authenticate with Gmail
+          </button>
         </div>
-        {formData.connectionType === 'IMAP' && (
-          <>
-            <div>
-              <label className="block text-sm font-medium mb-1">Username</label>
-              <input
-                type="text"
-                className="input"
-                value={formData.username || ''}
-                onChange={e => setFormData(prev => ({ ...prev, username: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Password</label>
-              <input
-                type="password"
-                className="input"
-                value={formData.password || ''}
-                onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Host</label>
-              <input
-                type="text"
-                className="input"
-                value={formData.host || ''}
-                onChange={e => setFormData(prev => ({ ...prev, host: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Port</label>
-              <input
-                type="number"
-                className="input"
-                value={formData.port || ''}
-                onChange={e => setFormData(prev => ({ ...prev, port: parseInt(e.target.value) || undefined }))}
-              />
-            </div>
-          </>
-        )}
-        {(formData.connectionType === 'GMAIL' || formData.connectionType === 'OUTLOOK') && (
-          <div>
-            <label className="block text-sm font-medium mb-1">Access Token</label>
-            <input
-              type="password"
-              className="input"
-              value={formData.password || ''}
-              onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))}
-            />
-          </div>
-        )}
-        <button type="submit" className="button-primary">
-          {isEditing ? 'Update' : 'Add'} Configuration
-        </button>
-      </form>
-      <div className="mt-8">
-        <h2 className="text-xl font-semibold mb-4">Configured Accounts</h2>
-        <div className="space-y-4">
-          {configs.map(config => (
-            <div key={config.id} className="card p-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="font-medium">{config.emailAddress}</h3>
-                  <p className="text-sm text-gray-500">{config.connectionType}</p>
-                </div>
-                <div className="space-x-2">
-                  <button
-                    onClick={() => handleEdit(config)}
-                    className="button-secondary"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => config.id && handleDelete(config.id)}
-                    className="button-secondary text-red-600"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+      )}
+
+      <button
+        type="submit"
+        className="button-primary w-full"
+      >
+        Save Configuration
+      </button>
+    </form>
   );
 }
