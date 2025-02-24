@@ -61,6 +61,22 @@ export default function EmailConfigForm({ onSuccess }: Props) {
     }
   };
 
+  const handleOutlookAuth = async () => {
+    try {
+      if (!formData.emailAddress) {
+        alert('Please enter your email address first');
+        return;
+      }
+
+      const response = await fetch(`/api/auth/outlook?email=${encodeURIComponent(formData.emailAddress)}`);
+      const { url } = await response.json();
+      window.location.href = url;
+    } catch (error) {
+      console.error('Failed to start Outlook auth:', error);
+      alert('Failed to authenticate with Outlook');
+    }
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4" id="email-config-form">
       <div>
@@ -137,6 +153,18 @@ export default function EmailConfigForm({ onSuccess }: Props) {
             className="button-secondary w-full"
           >
             Authenticate with Gmail
+          </button>
+        </div>
+      )}
+
+      {formData.connectionType === 'OUTLOOK' && (
+        <div>
+          <button
+            type="button"
+            onClick={handleOutlookAuth}
+            className="button-secondary w-full"
+          >
+            Authenticate with Outlook
           </button>
         </div>
       )}
