@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ConnectionType {
+  IMAP
+  GMAIL
+  OUTLOOK
+}
+
+model EmailIngestionConfig {
+  id             String          @id @default(uuid())
+  emailAddress   String
+  username       String?
+  password       String?
+  host          String?
+  port          Int?
+  useSSL        Boolean         @default(true)
+  connectionType ConnectionType
+  active        Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  attachments   PDFAttachment[]
+}
+
+model PDFAttachment {
+  id           String              @id @default(uuid())
+  configId     String
+  fromAddress  String
+  subject      String
+  dateReceived DateTime
+  fileName     String
+  localPath    String
+  createdAt    DateTime            @default(now())
+  config       EmailIngestionConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+}
